@@ -36,7 +36,10 @@ def _extract_nsc_numbers(synonyms):
 
 
 def _extract_dbid(synonyms):
-    return next((syn for syn in synonyms if syn.startswith("DB")), "Not found")
+    for syn in synonyms:
+        if syn.startswith("DB"):
+            return syn.replace("-", "")
+    return "Not found"
 
 
 def get_drug_info(drug_names):
