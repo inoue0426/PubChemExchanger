@@ -11,21 +11,21 @@ def fetch_data(url):
     return response.json() if response.status_code == 200 else None
 
 
-def get_property(data, key, default="Not found"):
+def _get_property(data, key, default="Not found"):
     return data.get(key, default)
 
 
-def get_identifiers(data, key):
+def _get_identifiers(data, key):
     return (
         data["IdentifierList"].get(key, []) if data and "IdentifierList" in data else []
     )
 
 
-def get_synonyms(data):
+def _get_synonyms(data):
     return data["InformationList"]["Information"][0].get("Synonym", []) if data else []
 
 
-def extract_nsc_numbers(synonyms):
+def _extract_nsc_numbers(synonyms):
     return list(
         set(
             "".join(filter(str.isdigit, syn))
@@ -35,7 +35,7 @@ def extract_nsc_numbers(synonyms):
     )
 
 
-def extract_dbid(synonyms):
+def _extract_dbid(synonyms):
     return next((syn for syn in synonyms if syn.startswith("DB")), "Not found")
 
 
@@ -56,20 +56,20 @@ def get_drug_info(drug_names):
 
         properties = fetch_data(f"{base_url}property/CanonicalSMILES/JSON")
         data["SMILES"] = (
-            get_property(
+            _get_property(
                 properties["PropertyTable"]["Properties"][0], "CanonicalSMILES"
             )
             if properties
             else "Not found"
         )
 
-        data["CID"] = get_identifiers(fetch_data(f"{base_url}cids/JSON"), "CID")
-        data["SID"] = get_identifiers(fetch_data(f"{base_url}sids/JSON"), "SID")
+        data["CID"] = _get_identifiers(fetch_data(f"{base_url}cids/JSON"), "CID")
+        data["SID"] = _get_identifiers(fetch_data(f"{base_url}sids/JSON"), "SID")
 
         synonyms = fetch_data(f"{base_url}synonyms/JSON")
-        data["Synonyms"] = get_synonyms(synonyms)
-        data["NSC"] = extract_nsc_numbers(data["Synonyms"])
-        data["DBID"] = extract_dbid(data["Synonyms"])
+        data["Synonyms"] = _get_synonyms(synonyms)
+        data["NSC"] = _extract_nsc_numbers(data["Synonyms"])
+        data["DBID"] = _extract_dbid(data["Synonyms"])
 
         drugs_data.append(data)
 
