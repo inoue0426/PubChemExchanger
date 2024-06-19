@@ -1,11 +1,11 @@
 import argparse
-from functools import lru_cache
-from tqdm import tqdm
 import time
-from joblib import Parallel, delayed
+from functools import lru_cache
 
 import pandas as pd
 import requests
+from joblib import Parallel, delayed
+from tqdm import tqdm
 
 
 @lru_cache(maxsize=None)
@@ -70,7 +70,9 @@ def process_drug(identifier, identifier_type="name"):
     }
     base_url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/{identifier_type}/{identifier}/"
 
-    properties = fetch_data(f"{base_url}property/CanonicalSMiles,ChEMBL_ID,PubChem_ID/JSON")
+    properties = fetch_data(
+        f"{base_url}property/CanonicalSMiles,ChEMBL_ID,PubChem_ID/JSON"
+    )
     if properties:
         properties_data = properties["PropertyTable"]["Properties"][0]
         data["SMILES"] = _get_property(properties_data, "CanonicalSMILES")
@@ -89,7 +91,10 @@ def process_drug(identifier, identifier_type="name"):
 
 
 def get_drug_info(identifiers, identifier_type="name"):
-    drugs_data = Parallel(n_jobs=-1)(delayed(process_drug)(identifier, identifier_type) for identifier in tqdm(identifiers, desc="Processing drugs"))
+    drugs_data = Parallel(n_jobs=-1)(
+        delayed(process_drug)(identifier, identifier_type)
+        for identifier in tqdm(identifiers, desc="Processing drugs")
+    )
     return pd.DataFrame(drugs_data, index=identifiers)
 
 
