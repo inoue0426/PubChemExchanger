@@ -1,5 +1,8 @@
 import argparse
 from functools import lru_cache
+from tqdm import tqdm
+import time
+from joblib import Parallel, delayed
 
 import pandas as pd
 import requests
@@ -7,8 +10,20 @@ import requests
 
 @lru_cache(maxsize=None)
 def fetch_data(url):
-    response = requests.get(url)
-    return response.json() if response.status_code == 200 else None
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Request failed: {e}, retrying.")
+        time.sleep(2)
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Retry failed: {e}")
+            return None
 
 
 def _get_property(data, key, default="Not found"):
@@ -42,41 +57,40 @@ def _extract_dbid(synonyms):
     return "Not found"
 
 
-def get_drug_info(drug_names):
-    drugs_data = []
-    for drug_name in drug_names:
-        data = {
-            "SMILES": "Not found",
-            "CID": [],
-            "SID": [],
-            "NSC": [],
-            "DBID": "Not found",
-            "Synonyms": [],
-        }
-        base_url = (
-            f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{drug_name}/"
-        )
+def process_drug(identifier, identifier_type="name"):
+    data = {
+        "SMILES": pd.NA,
+        "CID": [],
+        "SID": [],
+        "NSC": [],
+        "DBID": pd.NA,
+        "Synonyms": [],
+        "ChEMBL_ID": pd.NA,
+        "PubChem_ID": pd.NA,
+    }
+    base_url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/{identifier_type}/{identifier}/"
 
-        properties = fetch_data(f"{base_url}property/CanonicalSMILES/JSON")
-        data["SMILES"] = (
-            _get_property(
-                properties["PropertyTable"]["Properties"][0], "CanonicalSMILES"
-            )
-            if properties
-            else "Not found"
-        )
+    properties = fetch_data(f"{base_url}property/CanonicalSMiles,ChEMBL_ID,PubChem_ID/JSON")
+    if properties:
+        properties_data = properties["PropertyTable"]["Properties"][0]
+        data["SMILES"] = _get_property(properties_data, "CanonicalSMILES")
+        data["ChEMBL_ID"] = _get_property(properties_data, "ChEMBL_ID")
+        data["PubChem_ID"] = _get_property(properties_data, "PubChem_ID")
 
-        data["CID"] = _get_identifiers(fetch_data(f"{base_url}cids/JSON"), "CID")
-        data["SID"] = _get_identifiers(fetch_data(f"{base_url}sids/JSON"), "SID")
+    data["CID"] = _get_identifiers(fetch_data(f"{base_url}cids/JSON"), "CID")
+    data["SID"] = _get_identifiers(fetch_data(f"{base_url}sids/JSON"), "SID")
 
-        synonyms = fetch_data(f"{base_url}synonyms/JSON")
-        data["Synonyms"] = _get_synonyms(synonyms)
-        data["NSC"] = _extract_nsc_numbers(data["Synonyms"])
-        data["DBID"] = _extract_dbid(data["Synonyms"])
+    synonyms = fetch_data(f"{base_url}synonyms/JSON")
+    data["Synonyms"] = _get_synonyms(synonyms)
+    data["NSC"] = _extract_nsc_numbers(data["Synonyms"])
+    data["DBID"] = _extract_dbid(data["Synonyms"])
 
-        drugs_data.append(data)
+    return data
 
-    return pd.DataFrame(drugs_data, index=drug_names)
+
+def get_drug_info(identifiers, identifier_type="name"):
+    drugs_data = Parallel(n_jobs=-1)(delayed(process_drug)(identifier, identifier_type) for identifier in tqdm(identifiers, desc="Processing drugs"))
+    return pd.DataFrame(drugs_data, index=identifiers)
 
 
 if __name__ == "__main__":
@@ -90,6 +104,13 @@ if __name__ == "__main__":
         type=str,
         help="The names of the drugs to query",
     )
+    parser.add_argument(
+        "-t",
+        "--type",
+        default="name",
+        choices=["name", "cid", "sid", "chembl_id"],
+        help="Type of identifier",
+    )
     args = parser.parse_args()
-    result = get_drug_info(args.drug_names)
+    result = get_drug_info(args.drug_names, args.type)
     print(result)
